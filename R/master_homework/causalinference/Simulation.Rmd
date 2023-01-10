@@ -1,0 +1,150 @@
+---
+title: "2SLS method for instruments"
+author: "Seongmin"
+date: '2022 5 21 '
+output: html_document
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+```
+
+```{r include=FALSE}
+rm(list = ls())
+source('Instruments_functions.R')
+```
+
+# Estimands and distributional settings
+
+```{r echo=TRUE}
+n <- 50
+rho <- 0.7
+alpha0 <- 5
+alpha1 <- 3
+beta0 <- 1
+beta1 <- 2
+```
+
+# Simulation of OLS and 2SLS
+
+```{r echo=TRUE}
+simul.data <- list()
+beta.OLS <- c()
+beta.2SLS <- c()
+
+set.seed(500)
+simulation <- 100
+for(i in 1:simulation){
+  simul.data[[i]] <- data.gen(n = n, rho = rho, alpha = alpha1, integer.W = T)
+  Z <- simul.data[[i]]$Z
+  W <- simul.data[[i]]$W
+  Y <- simul.data[[i]]$Y
+  
+  ## OLS
+  beta.OLS <- c(beta.OLS, lm(Y ~ W)$coefficients[2])
+  ## 2SLS
+  fitted.W <- lm(W ~ Z)$fitted.values
+  beta.2SLS <- c(beta.2SLS, lm(Y~fitted.W)$coefficients[2])
+}
+
+```
+
+
+## Performances
+
+```{r echo=TRUE, fig.height=4, fig.width=8}
+par(mfrow = c(1,2))
+text.plot <- c("OLS of", "2SLS of")
+plot(x = 1:simulation, y = beta.OLS, main = bquote(.(text.plot[1])~beta[1]), 
+     ylab = "Estimated value", ylim = c(1.5, 2.5), cex.main = 1.4, cex.lab=1.3)
+abline(h = beta1, col = "blue")
+abline(h = mean(beta.OLS), col = "red")
+
+plot(x = 1:simulation, y = beta.2SLS, main = bquote(.(text.plot[2])~beta[1]), 
+     ylab = "" , ylim = c(1.5, 2.5), cex.main = 1.4, cex.lab=1.3)
+abline(h = beta1, col = "blue")
+abline(h = mean(beta.2SLS), col = "red")
+```
+```{r echo=FALSE}
+cat("Mean of OLS:", mean(beta.OLS),"\n")
+cat("Mean of naive 2SLS:", mean(beta.2SLS),"\n")
+cat("Variance of OLS:", var(beta.OLS),"\n")
+cat("Variance of naive 2SLS:", var(beta.2SLS),"\n")
+```
+
+# Multiple instruments settings
+
+```{r echo=TRUE}
+set.seed(500)
+
+simul.data.3 <- list()
+beta.2SLS.T2 <- c()
+beta.OLS.3 <- c()
+beta.2SLS.3 <- c()
+
+simulation <- 100
+K=3
+for(i in 1:simulation){
+   simul.data.3[[i]] <- data.gen(n, rho, alpha = c(2, 1, 3), K=K, integer.W = T)
+   df <- data.frame(Z = simul.data.3[[i]]$Z, W = round(simul.data.3[[i]]$W, 0), Y = simul.data.3[[i]]$Y)
+ 
+  ## Calculate sample means
+  df.sum <- df %>% mutate(Wbar.T=mean(W)) %>% group_by(Z) %>%
+    summarise(Ybar = mean(Y), Wbar = mean(W), Wbar.T = first(Wbar.T), n=n()) %>%
+  mutate(Pi = n / sum(n))
+  
+  ## 2SLS
+  beta.k.est <- beta.k(df.sum, K=K)
+  mu.k.est <- mu.k(df.sum, K=K)
+  beta.2SLS.T2 <- c(beta.2SLS.T2, sum(beta.k.est * mu.k.est))
+  
+  ## OLS
+  beta.OLS.3 <- c(beta.OLS.3, lm(Y ~ W, data = df)$coefficients[2])
+    
+  ## Binarized IV 2SLS
+  df.naive <- df
+  df.naive["Z"][df.naive["Z"] >= 1] <- 1
+  df.naive["Z"][df.naive["Z"] == 0] <- 0
+  
+  fitted.W <- lm(W ~ Z, data = df.naive)$fitted.values
+  beta.2SLS.3 <- c(beta.2SLS.3, lm(Y~fitted.W, data = df.naive)$coefficients[2])
+}
+
+```
+
+
+>Noted that the function of 2SLS sometimes returns NA, due to zero denominators.
+>Setting $W$ as an integer involves more frequent NA in the results.
+
+
+## Performances
+
+```{r echo=FALSE, fig.height=4, fig.width=10}
+par(mfrow = c(1,3))
+text.plot <- c("OLS of", "2SLS of", "with binarized IV", "2SLS of", "with Theorem 2.2")
+plot(x = 1:simulation, y = beta.OLS.3, main = bquote(.(text.plot[1])~beta[1]), 
+     ylab = "Estimated value", ylim = c(1.5, 2.5), cex.main = 1.8, cex.lab=1.8)
+abline(h = beta1, col = "blue")
+abline(h = mean(beta.OLS.3), col = "red")
+
+plot(x = 1:simulation, y = beta.2SLS.3, main = bquote(.(text.plot[2])~beta[1]~.(text.plot[3])), 
+     ylab = "" , ylim = c(1.5, 2.5), cex.main = 1.8, cex.lab=1.8)
+abline(h = beta1, col = "blue")
+abline(h = mean(beta.2SLS.3, na.rm = T), col = "red")
+
+plot(x = 1:simulation, y = beta.2SLS.T2, main = bquote(.(text.plot[4])~beta[1]~.(text.plot[5])),
+     ylab = "", ylim = c(1.5, 2.5), cex.main = 1.8, cex.lab=1.8)
+abline(h = beta1, col = "blue")
+abline(h = mean(beta.2SLS.T2, na.rm = T), col = "red")
+```
+
+```{r echo=FALSE}
+cat("Mean of OLS:", mean(beta.OLS.3),"\n")
+cat("Mean of 2SLS with binarized IV:", mean(beta.2SLS.3, na.rm = T),"\n")
+cat("Mean of 2SLS with Theorem 2.2:", mean(beta.2SLS.T2, na.rm = T),"\n")
+cat("Variance of OLS:", var(beta.OLS.3),"\n")
+cat("Variance of 2SLS with binarized IV:", var(beta.2SLS.3, na.rm = T),"\n")
+cat("Variance of 2SLS with Theorem 2.2:", var(beta.2SLS.T2, na.rm = T),"\n")
+```
