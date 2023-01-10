@@ -1,3 +1,9 @@
+#1.22
+n <- c(10, 50, 100, 500)
+
+theta = 2
+
+for(i in 1:4){
 x <- rbeta(n[i], shape1 = theta, shape2 = 1)
   
 post_theta <- rgamma(1000, shape = n[i]+1, rate = 1-sum(log(x)))
